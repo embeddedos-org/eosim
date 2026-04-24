@@ -212,6 +212,48 @@ The optional Tkinter GUI provides:
 | [EoStudio](https://github.com/embeddedos-org/EoStudio) | Design suite — 10 editors with LLM integration |
 | **EoSim** | **Simulation platform (this repo)** |
 
+## Security
+
+### QEMU Connection Security
+
+The QMP (QEMU Machine Protocol) client connects to QEMU over TCP or Unix sockets. **QMP has no built-in authentication.** To use it securely:
+
+- **Always bind QMP to localhost** (`-qmp tcp:127.0.0.1:4444,server,wait=off`). Never expose QMP on `0.0.0.0` or a public interface.
+- If remote QMP access is required, use an SSH tunnel or VPN — never expose QMP directly.
+- The `QMPClient.connect_tcp()` method logs a warning when connecting to non-localhost hosts.
+- Use Unix domain sockets (`-qmp unix:/tmp/qmp.sock,server,wait=off`) when possible for stronger isolation via filesystem permissions.
+
+### Serial Input Validation
+
+The `SerialBridge` sanitizes all data received from physical serial ports before forwarding to the simulated UART:
+
+- Control characters (except `\t`, `\n`, `\r`) are stripped to prevent terminal escape injection.
+- Input is truncated to 4096 bytes per read to prevent buffer-based attacks.
+- When bridging to a VM UART, never pass serial data directly to a shell `exec()` or `os.system()` call.
+
+### Docker Security
+
+The `Dockerfile` follows container security best practices:
+
+- **Non-root user**: The container runs as the `eosim` user (UID 1000), not root.
+- **Minimal image**: Uses `python:3.11-slim` to reduce attack surface.
+- **Multi-stage build**: Build tools are not included in the final image.
+- **HEALTHCHECK**: Container health is monitored via `eosim doctor`.
+- **No unnecessary ports**: No ports are `EXPOSE`d by default — map only what you need at runtime.
+
+### CI/CD Security Scanning
+
+Automated security scanning runs on multiple schedules:
+
+| Workflow | Schedule | Tools |
+|---|---|---|
+| **CodeQL** | Weekly + on PR | GitHub CodeQL static analysis |
+| **Nightly** | Daily | Bandit (SAST), pip-audit (dependency audit) |
+| **Weekly** | Weekly | Bandit, pip-audit, detect-secrets |
+| **OpenSSF Scorecard** | Weekly | Supply chain security scoring |
+
+See [SECURITY.md](SECURITY.md) for vulnerability reporting procedures.
+
 ## Standards Compliance
 
 This project is part of the EoS ecosystem and aligns with international standards including ISO/IEC/IEEE 15288:2023, ISO/IEC 12207, ISO/IEC/IEEE 42010, ISO/IEC 25000, ISO/IEC 25010, ISO/IEC 27001, ISO/IEC 15408, IEC 61508, ISO 26262, DO-178C, FIPS 140-3, POSIX (IEEE 1003), WCAG 2.1, and more. See the [EoS Compliance Documentation](https://github.com/embeddedos-org/.github/tree/master/docs/compliance) for full details including NTIA SBOM, SPDX, CycloneDX, and OpenChain compliance.

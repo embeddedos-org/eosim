@@ -6,10 +6,13 @@ Protocol: https://www.qemu.org/docs/master/interop/qmp-spec.html
 Supports TCP and Unix socket connections.
 """
 import json
+import logging
 import socket
 import threading
 import time
 from typing import Any, Callable, Optional
+
+logger = logging.getLogger(__name__)
 
 
 class QMPError(Exception):
@@ -32,7 +35,18 @@ class QMPClient:
         self._recv_buffer = b''
 
     def connect_tcp(self, host: str = 'localhost', port: int = 4444, timeout: float = 5.0):
-        """Connect to QMP via TCP."""
+        """Connect to QMP via TCP.
+
+        WARNING: QMP does not support authentication. Ensure the QMP port is
+        bound to localhost or protected by firewall rules. Never expose QMP
+        on a public network interface.
+        """
+        if host not in ('localhost', '127.0.0.1', '::1'):
+            logger.warning(
+                "QMP connection to non-localhost host %s:%d — QMP has NO "
+                "authentication. Ensure the network is trusted and firewalled.",
+                host, port,
+            )
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._sock.settimeout(timeout)
         self._sock.connect((host, port))
