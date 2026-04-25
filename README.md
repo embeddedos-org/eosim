@@ -6,6 +6,7 @@
 [![Nightly](https://github.com/embeddedos-org/eosim/actions/workflows/nightly.yml/badge.svg)](https://github.com/embeddedos-org/eosim/actions/workflows/nightly.yml)
 [![Release](https://github.com/embeddedos-org/eosim/actions/workflows/release.yml/badge.svg)](https://github.com/embeddedos-org/eosim/actions/workflows/release.yml)
 [![Version](https://img.shields.io/github/v/tag/embeddedos-org/eosim?label=version)](https://github.com/embeddedos-org/eosim/releases/latest)
+[![Book](https://github.com/embeddedos-org/EoSim/actions/workflows/book-build.yml/badge.svg)](https://github.com/embeddedos-org/EoSim/actions/workflows/book-build.yml)
 
 **Simulate, validate, and test embedded systems before hardware is ready.**
 
