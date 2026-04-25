@@ -24,7 +24,7 @@ EoSim is the simulation and validation platform for the EmbeddedOS ecosystem. In
 
 This reference book is intended for embedded systems engineers, firmware developers, QA engineers, and DevOps professionals who need to simulate, test, and validate embedded software across diverse hardware targets. Whether you are running a quick CI test against a Cortex-M4, performing full-system validation on a Raspberry Pi 4 simulation, or orchestrating cluster simulations for multi-node IoT deployments, this book provides the comprehensive technical depth required.
 
-EoSim combines a native Python simulation engine with Renode integration, QEMU binary emulation, and hardware-in-the-loop (HIL) support. It includes a GUI dashboard with GPIO visualization, UART terminal, CPU state panels, and 3D renderers. The platform is fully CI-native, with configuration-driven testing that integrates seamlessly into GitHub Actions, Jenkins, and other CI/CD systems.
+EoSim combines a native Python simulation engine with Renode [@renode_docs] integration, QEMU [@bellard2005] binary emulation, and hardware-in-the-loop (HIL [@herber2020]) support. It includes a GUI dashboard with GPIO visualization, UART terminal, CPU state panels, and 3D renderers. The platform is fully CI-native, with configuration-driven testing that integrates seamlessly into GitHub Actions, Jenkins, and other CI/CD systems.
 
 The platform supports architectures from tiny Cortex-M0+ microcontrollers to powerful Cortex-A78AE application processors, RISC-V, Xtensa (ESP32), x86_64, MIPS, PowerPC, MicroBlaze, ARC, and specialty domain simulators for aerodynamics, finance, gaming, physiology, and weather.
 
@@ -1897,3 +1897,8 @@ EoSim is part of the EoS ecosystem and aligns with international standards inclu
 *EoSim — Multi-Architecture Embedded Simulation Platform Reference — Version 1.0 — April 2026*
 
 *Copyright (c) 2026 EmbeddedOS Organization. MIT License.*
+
+## References
+
+::: {#refs}
+:::
