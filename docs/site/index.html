@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EoSim — Simulation Platform | EmbeddedOS</title>
+  <meta name="description" content="Simulation and validation platform supporting 52+ platforms across 12 architectures. Native Python engine, Renode, QEMU emulation, HIL bridge, and CI testing.">
+  <meta name="keywords" content="simulation, emulation, qemu, renode, hardware-in-the-loop, testing, embedded">
+  <meta name="author" content="EmbeddedOS">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://embeddedos-org.github.io/EoSim/">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="EoSim — Simulation Platform | EmbeddedOS">
+  <meta property="og:description" content="Simulation and validation platform supporting 52+ platforms across 12 architectures. Native Python engine, Renode, QEMU emulation, HIL bridge, and CI testing.">
+  <meta property="og:url" content="https://embeddedos-org.github.io/EoSim/">
+  <meta property="og:site_name" content="EmbeddedOS">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="EoSim — Simulation Platform | EmbeddedOS">
+  <meta name="twitter:description" content="Simulation and validation platform supporting 52+ platforms across 12 architectures. Native Python engine, Renode, QEMU emulation, HIL bridge, and CI testing.">
+  <link rel="stylesheet" href="style.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "EoSim",
+    "description": "Simulation and validation platform supporting 52+ platforms across 12 architectures. Native Python engine, Renode, QEMU emulation, HIL bridge, and CI testing.",
+    "url": "https://embeddedos-org.github.io/EoSim/",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "EmbeddedOS",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+    "author": { "@type": "Organization", "name": "EmbeddedOS", "url": "https://embeddedos-org.github.io/" }
+  }
+  </script>
+</head>
+<body>
+  <nav class="navbar">
+    <div class="nav-inner">
+      <a href="https://embeddedos-org.github.io/" class="logo">
+        <div class="logo-icon">eOS</div>
+        EmbeddedOS
+      </a>
+      <div class="nav-links">
+        <a href="https://embeddedos-org.github.io/">Home</a>
+        <a href="#features" class="active">Docs</a>
+        <a href="https://github.com/embeddedos-org/EoSim" target="_blank">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <section class="hero">
+    <div class="hero-content">
+      <div class="hero-badges">
+        <span class="badge badge-red">Simulation</span>
+        <span class="badge badge-orange">Emulation</span>
+        <span class="badge badge-blue">CI Testing</span>
+      </div>
+      <h1 style="background: linear-gradient(135deg, #f85149, #ff7b73); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">EoSim</h1>
+      <p class="subtitle">Simulation and validation platform supporting 52+ platforms across 12 architectures. Native Python engine, Renode, QEMU emulation, HIL bridge, and CI testing.</p>
+      <div class="hero-buttons">
+        <a href="https://github.com/embeddedos-org/EoSim" class="btn btn-primary" target="_blank">Star on GitHub</a>
+        <a href="#quickstart" class="btn btn-outline">Quick Start</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="features">
+    <h2 class="section-title">Features</h2>
+    <p class="section-subtitle">Complete simulation and validation ecosystem for embedded development</p>
+    <div class="feature-grid">
+      <div class="feature-card">
+        <h3>52+ Platform Definitions</h3>
+        <p>Pre-configured platform definitions covering STM32, ESP32, nRF, RISC-V, and many more out of the box.</p>
+      </div>
+      <div class="feature-card">
+        <h3>12 Architecture Support</h3>
+        <p>ARM Cortex-M/A/R, RISC-V, Xtensa, AVR, MIPS, x86, and more with unified simulation APIs.</p>
+      </div>
+      <div class="feature-card">
+        <h3>Native Python Engine</h3>
+        <p>Pure-Python register-level simulation engine for rapid prototyping and scripted test scenarios.</p>
+      </div>
+      <div class="feature-card">
+        <h3>QEMU Binary Emulation</h3>
+        <p>Full binary translation via QEMU for cycle-accurate emulation of complete firmware images.</p>
+      </div>
+      <div class="feature-card">
+        <h3>Renode Integration</h3>
+        <p>Seamless Renode integration for multi-node simulations with peripheral and bus modeling.</p>
+      </div>
+      <div class="feature-card">
+        <h3>HIL Bridge</h3>
+        <p>Hardware-in-the-loop bridge connecting simulated environments to real hardware over USB/JTAG/SWD.</p>
+      </div>
+      <div class="feature-card">
+        <h3>GPIO/UART/Timer Register Maps</h3>
+        <p>Accurate register-level models for GPIO, UART, SPI, I2C, and timer peripherals across all platforms.</p>
+      </div>
+      <div class="feature-card">
+        <h3>GUI Dashboard with 3D</h3>
+        <p>Interactive dashboard with 3D board visualization, waveform viewers, and real-time peripheral state.</p>
+      </div>
+      <div class="feature-card">
+        <h3>Cluster Simulation</h3>
+        <p>Multi-device cluster simulation for testing networked embedded systems and mesh topologies.</p>
+      </div>
+      <div class="feature-card">
+        <h3>CI-Native Testing</h3>
+        <p>First-class CI/CD integration with GitHub Actions, Jenkins, and GitLab for automated firmware validation.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-alt" id="quickstart">
+    <h2 class="section-title">Quick Start</h2>
+    <p class="section-subtitle">Get up and running in seconds</p>
+    <pre><code>pip install eosim && eosim run stm32f4</code></pre>
+  </section>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-grid">
+        <a href="https://embeddedos-org.github.io/">EmbeddedOS</a>
+        <a href="https://embeddedos-org.github.io/eNI/">eNI</a>
+        <a href="https://embeddedos-org.github.io/EoSim/">EoSim</a>
+        <a href="https://embeddedos-org.github.io/EoStudio/">EoStudio</a>
+        <a href="https://embeddedos-org.github.io/eApps/">eApps</a>
+        <a href="https://embeddedos-org.github.io/eDB/">eDB</a>
+        <a href="https://embeddedos-org.github.io/eAI/">eAI</a>
+        <a href="https://embeddedos-org.github.io/eIPC/">eIPC</a>
+        <a href="https://embeddedos-org.github.io/eOffice/">eOffice</a>
+        <a href="https://embeddedos-org.github.io/eBrowser/">eBrowser</a>
+        <a href="https://embeddedos-org.github.io/eRide/">eRide</a>
+        <a href="https://embeddedos-org.github.io/eSocial/">eSocial</a>
+        <a href="https://embeddedos-org.github.io/eTrack/">eTrack</a>
+        <a href="https://embeddedos-org.github.io/eTravel/">eTravel</a>
+        <a href="https://embeddedos-org.github.io/eWallet/">eWallet</a>
+      </div>
+      <div class="footer-bottom">&copy; 2026 EmbeddedOS Organization. Open-source under MIT License.</div>
+    </div>
+  </footer>
+</body>
+</html>
