@@ -95,6 +95,9 @@ The platform provides:
 
 1. **Simulate everything** — Every supported platform can be tested without physical hardware, from bare-metal MCU firmware to full Linux images on application processors.
 
+![Figure: EoSim Hardware-in-the-Loop Test Architecture — GDB bridge with QEMU virtual peripherals](images/hil-testing.png)
+
+
 2. **Engine flexibility** — Different simulation engines serve different needs: native Python for speed, Renode for determinism, QEMU for binary accuracy, HIL for real hardware.
 
 3. **Configuration-driven** — Platform definitions are YAML files, not code. Adding a new platform requires no Python changes, just a new YAML configuration.
@@ -170,6 +173,9 @@ eosim search "cortex-m4"
 ## 2.5 First Simulation
 
 Here is a complete workflow for simulating an STM32F4 target:
+
+![Figure: EoSim Simulation Execution Flow — platform load through assertion checking](images/simulation-flow.png)
+
 
 ```bash
 # 1. Check the platform is available
