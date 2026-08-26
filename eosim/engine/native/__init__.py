@@ -130,10 +130,16 @@ class VirtualMachine:
             # is counted before the break. Previously the halting instruction
             # was executed but not counted, leaving run()['cycles'] one behind
             # cpu.state.cycles for every program that halts.
+            undef_before = self.cpu.undefined_count
             stepped = self.cpu.step()
             executed += 1
             if not stepped:
-                reason = 'halted'
+                # Distinguish a program that chose to stop from one the decoder
+                # could not follow. Both leave the core halted.
+                if self.cpu.undefined_count > undef_before:
+                    reason = 'undefined-instruction'
+                else:
+                    reason = 'halted'
                 break
 
             if executed % 100 == 0:
@@ -146,8 +152,16 @@ class VirtualMachine:
         elapsed = time.time() - self.start_time
 
         # A clean halt (UDF/breakpoint) is the only outcome the firmware chose.
-        # Exhausting the cycle budget or the clock means we stopped it.
+        # Exhausting the cycle budget or the clock means we stopped it, and an
+        # undefined opcode means the decoder could not follow the program.
         success = reason == 'halted'
+
+        if reason == 'undefined-instruction' and self.cpu.last_undefined:
+            pc, instr = self.cpu.last_undefined
+            self._uart_print(
+                '\nUndefined instruction 0x%08X at 0x%08X.\n'
+                'This engine decodes a small ARM32 subset; it cannot execute a '
+                'full firmware image.\n' % (instr, pc))
 
         self._uart_print('\nSimulation stopped (%s): %d cycles in %.3fs\n'
                          % (reason, executed, elapsed))
@@ -157,6 +171,7 @@ class VirtualMachine:
             'reason': reason,
             'cycles': executed,
             'duration_s': elapsed,
+            'undefined_count': self.cpu.undefined_count,
             'boot_log': self.get_uart_output(),
             'cpu_state': self.cpu.state.dump(),
         }

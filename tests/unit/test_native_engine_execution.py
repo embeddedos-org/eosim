@@ -132,6 +132,53 @@ class TestReportingContract:
         assert "\\n" not in vm.dump_state()
 
 
+class TestUndefinedInstructions:
+    """The decoder covers a small ARM32 subset.
+
+    An opcode outside it used to fall through the if/elif chain and be treated
+    as a no-op. A real firmware image would therefore "run", compute nothing,
+    and could still reach a halt and be reported as a successful boot. Since
+    only a handful of instructions are decoded, that is the common case.
+    """
+
+    ADD_R0_R1_R2 = 0xE0810002      # not decoded
+    PUSH_LR = 0xE52DE004           # not decoded
+
+    def test_undefined_opcode_stops_the_run(self):
+        vm = _vm(arm(mov_imm(1, 5), self.ADD_R0_R1_R2, UDF))
+        r = vm.run(max_cycles=64, timeout_s=5)
+
+        assert r["reason"] == "undefined-instruction"
+        assert r["success"] is False
+        assert r["undefined_count"] == 1
+
+    def test_undefined_opcode_is_not_silently_skipped(self):
+        """ADD r0,r1,r2 with r1=5, r2=3 must not leave r0 untouched and continue."""
+        vm = _vm(arm(mov_imm(1, 5), mov_imm(2, 3), self.ADD_R0_R1_R2, UDF))
+        r = vm.run(max_cycles=64, timeout_s=5)
+
+        assert vm.cpu.state.regs[0] == 0          # it did not execute
+        assert r["success"] is False              # and that is reported
+        assert vm.cpu.last_undefined[1] == self.ADD_R0_R1_R2
+
+    def test_prologue_of_a_real_function_is_rejected(self):
+        """PUSH {lr} opens almost every compiled ARM function."""
+        vm = _vm(arm(self.PUSH_LR, UDF))
+        r = vm.run(max_cycles=64, timeout_s=5)
+
+        assert r["reason"] == "undefined-instruction"
+        assert "cannot execute a full firmware image" in r["boot_log"]
+
+    def test_strict_mode_can_be_disabled(self):
+        """Opt out for tracing experiments, but never by default."""
+        vm = _vm(arm(mov_imm(1, 5), self.ADD_R0_R1_R2, UDF))
+        vm.cpu.strict_undefined = False
+        r = vm.run(max_cycles=64, timeout_s=5)
+
+        assert r["reason"] == "halted"
+        assert r["undefined_count"] == 1          # still counted, just not fatal
+
+
 class TestTimeout:
     def test_timeout_is_reported_as_such(self):
         vm = _vm(arm(*([NOP] * 4)))

@@ -46,10 +46,20 @@ class CPUSimulator:
         self.max_instructions: int = 1000000
         self.on_syscall: Optional[Callable] = None
         self.on_halt: Optional[Callable] = None
+        # An opcode this decoder does not implement used to fall through the
+        # if/elif chain and be treated as a no-op, so a real firmware image
+        # would "run" while computing nothing and could still reach a halt and
+        # report success. Only a handful of ARM instructions are decoded, so
+        # that is the common case, not an edge case. Refuse instead.
+        self.strict_undefined: bool = True
+        self.undefined_count: int = 0
+        self.last_undefined: Optional[tuple] = None
 
     def reset(self, entry: int = 0, stack: int = 0x20000000):
         self.state.reset(entry, stack)
         self.trace_log.clear()
+        self.undefined_count = 0
+        self.last_undefined = None
 
     def step(self) -> bool:
         if self.state.halted:
@@ -59,7 +69,14 @@ class CPUSimulator:
             return False
         if self.memory:
             instr = self.memory.read32(self.state.pc)
-            self._execute(instr)
+            decoded = self._execute(instr)
+            if not decoded and self.strict_undefined:
+                # Halt rather than skip: silently ignoring the opcode makes the
+                # run look successful while the program never actually ran.
+                self.state.halted = True
+                self.state.pc += 4
+                self.state.cycles += 1
+                return False
         self.state.pc += 4
         self.state.cycles += 1
         if self.state.cycles >= self.max_instructions:
@@ -75,7 +92,8 @@ class CPUSimulator:
             executed += 1
         return executed
 
-    def _execute(self, instr: int):
+    def _execute(self, instr: int) -> bool:
+        """Execute one instruction. Returns False if the opcode is unknown."""
         # Instruction decoder — handles common patterns
         if instr == 0:  # NOP or uninitialized
             pass
@@ -107,5 +125,12 @@ class CPUSimulator:
             addr = self.state.pc + 8 + (instr & 0xFFF)
             if self.memory:
                 self.memory.write32(addr, self.state.regs[rd])
+        else:
+            # Not decoded. Record it and tell step().
+            self.undefined_count += 1
+            self.last_undefined = (self.state.pc, instr)
+            self.trace_log.append((self.state.pc, instr, self.state.cycles))
+            return False
         # More instructions can be added for each architecture
         self.trace_log.append((self.state.pc, instr, self.state.cycles))
+        return True
