@@ -29,6 +29,10 @@ class VirtualMachine:
         self.peripherals: dict = {}
         self.start_time = 0.0
         self.cycles_executed = 0
+        # Whether real code was mapped. Without it the CPU steps over zeroed
+        # memory, which must not be reported as a boot. See run().
+        self.firmware_loaded = False
+        self.firmware_path: Optional[str] = None
 
         # Add RAM
         self.bus.add_region(MemoryRegion('ram', 0x20000000, ram_mb * 1024 * 1024))
@@ -65,37 +69,73 @@ class VirtualMachine:
         flash = MemoryRegion('firmware', addr, len(data), bytearray(data), readonly=True)
         self.bus.add_region(flash)
         self.cpu.reset(entry=addr, stack=0x20000000 + 512 * 1024)
+        self.firmware_loaded = True
+        self.firmware_path = path
         return True
 
     def load_binary(self, data: bytes, addr: int = 0x08000000):
         region = MemoryRegion('binary', addr, len(data), bytearray(data))
         self.bus.add_region(region)
         self.cpu.reset(entry=addr, stack=0x20000000 + 512 * 1024)
+        self.firmware_loaded = True
+        self.firmware_path = '<memory>'
 
     def run(self, max_cycles: int = 100000, timeout_s: float = 30.0) -> dict:
+        """Execute until halt, cycle budget, or timeout.
+
+        `success` reports what happened. It used to be the literal True and the
+        engine printed "EoS booted successfully" unconditionally, so a run over
+        zeroed memory with no firmware loaded reported a successful EoS boot.
+        Nothing distinguished that from a real one.
+        """
         self.running = True
         self.start_time = time.time()
         self.boot_log.clear()
 
-        # Boot message
-        self._uart_print(f'EoSim Virtual Machine: {self.name} ({self.arch})\\n')
-        self._uart_print('RAM: %d MB | Peripherals: %d\\n' % (
-            sum(r.size for r in self.bus.regions if r.name == 'ram') // (1024*1024),
+        self._uart_print('EoSim Virtual Machine: %s (%s)\n' % (self.name, self.arch))
+        self._uart_print('RAM: %d MB | Peripherals: %d\n' % (
+            sum(r.size for r in self.bus.regions if r.name == 'ram') // (1024 * 1024),
             len(self.peripherals)))
-        self._uart_print('Booting...\\n')
+
+        if not self.firmware_loaded:
+            # Stepping over zeroed memory executes NOP 10000 times. That is not
+            # a boot, and calling it one is how a simulator stops being evidence.
+            self._uart_print(
+                'No firmware loaded - nothing to execute.\n'
+                'Load an image with load_firmware(path) or `eosim run <platform> '
+                '--firmware <file>`.\n')
+            self.running = False
+            elapsed = time.time() - self.start_time
+            return {
+                'success': False,
+                'reason': 'no-firmware',
+                'cycles': 0,
+                'duration_s': elapsed,
+                'boot_log': self.get_uart_output(),
+                'cpu_state': self.cpu.state.dump(),
+            }
+
+        self._uart_print('Booting %s...\n' % (self.firmware_path or 'image'))
 
         executed = 0
+        reason = 'cycle-limit'
         while self.running and executed < max_cycles:
             elapsed = time.time() - self.start_time
             if elapsed > timeout_s:
-                self._uart_print(f'\\nTimeout after {elapsed:.1f}s\\n')
+                reason = 'timeout'
+                self._uart_print('\nTimeout after %.1fs\n' % elapsed)
                 break
 
-            if not self.cpu.step():
-                break
+            # The instruction retires whether or not it halts the core, so it
+            # is counted before the break. Previously the halting instruction
+            # was executed but not counted, leaving run()['cycles'] one behind
+            # cpu.state.cycles for every program that halts.
+            stepped = self.cpu.step()
             executed += 1
+            if not stepped:
+                reason = 'halted'
+                break
 
-            # Tick timer
             if executed % 100 == 0:
                 timer = self.peripherals.get('timer0')
                 if timer:
@@ -105,11 +145,16 @@ class VirtualMachine:
         self.cycles_executed = executed
         elapsed = time.time() - self.start_time
 
-        self._uart_print('\\nSimulation complete: %d cycles in %.3fs\\n' % (executed, elapsed))
-        self._uart_print('EoS booted successfully\\n')
+        # A clean halt (UDF/breakpoint) is the only outcome the firmware chose.
+        # Exhausting the cycle budget or the clock means we stopped it.
+        success = reason == 'halted'
+
+        self._uart_print('\nSimulation stopped (%s): %d cycles in %.3fs\n'
+                         % (reason, executed, elapsed))
 
         return {
-            'success': True,
+            'success': success,
+            'reason': reason,
             'cycles': executed,
             'duration_s': elapsed,
             'boot_log': self.get_uart_output(),
@@ -139,8 +184,8 @@ class VirtualMachine:
     def dump_state(self) -> str:
         lines = [f'=== EoSim VM: {self.name} ===']
         lines.append(self.cpu.state.dump())
-        lines.append('\\nPeripherals: {}'.format(', '.join(self.peripherals.keys())))
+        lines.append('\nPeripherals: {}'.format(', '.join(self.peripherals.keys())))
         lines.append('Memory regions:')
         for r in self.bus.regions:
             lines.append('  %-10s 0x%08X  %d bytes' % (r.name, r.base, r.size))
-        return '\\n'.join(lines)
+        return '\n'.join(lines)

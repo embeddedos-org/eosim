@@ -1,16 +1,16 @@
 Metadata-Version: 2.4
 Name: eosim
 Version: 3.0.1
-Summary: World-class multi-architecture embedded simulation platform — 150+ platforms, 40 domains, 26 architectures
+Summary: Multi-architecture embedded simulation platform for EoS — native engine plus Renode/QEMU backends
 Author-email: EoS Project <team@embeddedos.org>
 Maintainer-email: EoS Project <team@embeddedos.org>
 License: MIT
-Project-URL: Homepage, https://github.com/embeddedos-org/eosim
-Project-URL: Repository, https://github.com/embeddedos-org/eosim
-Project-URL: Documentation, https://github.com/embeddedos-org/eosim/tree/main/docs
-Project-URL: Bug Tracker, https://github.com/embeddedos-org/eosim/issues
-Project-URL: Changelog, https://github.com/embeddedos-org/eosim/blob/main/CHANGELOG.md
-Classifier: Development Status :: 5 - Production/Stable
+Project-URL: Homepage, https://github.com/embeddedos-org/EoSim
+Project-URL: Repository, https://github.com/embeddedos-org/EoSim
+Project-URL: Documentation, https://docs.eosim.io
+Project-URL: Bug Tracker, https://github.com/embeddedos-org/EoSim/issues
+Project-URL: Changelog, https://github.com/embeddedos-org/EoSim/blob/master/CHANGELOG.md
+Classifier: Development Status :: 4 - Beta
 Classifier: Intended Audience :: Developers
 Classifier: Intended Audience :: Science/Research
 Classifier: License :: OSI Approved :: MIT License
