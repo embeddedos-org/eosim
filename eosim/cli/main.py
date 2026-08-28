@@ -639,18 +639,38 @@ def eos_test_suite(source):
 @cli.command("ecosystem")
 @click.option("--workspace", default=None, help="EoS workspace root")
 @click.option("--simulate/--no-simulate", default=True, help="Run simulations")
-def ecosystem(workspace, simulate):
+@click.option("--only", multiple=True,
+              help="Test only these repos (repeatable, e.g. --only eos --only ebuild)")
+@click.option("--list", "list_only", is_flag=True,
+              help="List the repos that would be tested, and how, then exit")
+def ecosystem(workspace, simulate, only, list_only):
     """Test ALL EoS repos — build, test, simulate, validate."""
-    from eosim.integrations.ecosystem import find_repos, run_ecosystem_tests
+    from eosim.integrations.ecosystem import (
+        detect_kind, find_repos, run_ecosystem_tests)
     click.echo("EoSim Ecosystem Validation")
     click.echo("")
     repos = find_repos(workspace)
     if not repos:
         click.echo("No EoS repos found. Set --workspace or EOS_WORKSPACE env var.", err=True)
         sys.exit(1)
-    click.echo("Found %d repos: %s" % (len(repos), ", ".join(repos.keys())))
+
+    if only:
+        unknown = sorted(set(only) - set(repos))
+        if unknown:
+            click.echo("Not in the workspace: %s" % ", ".join(unknown), err=True)
+            click.echo("Available: %s" % ", ".join(sorted(repos)), err=True)
+            sys.exit(1)
+        repos = {k: v for k, v in repos.items() if k in only}
+
+    click.echo("Found %d repo(s):" % len(repos))
+    for name in sorted(repos):
+        click.echo("    %-28s %s" % (name, detect_kind(repos[name])))
     click.echo("")
-    report = run_ecosystem_tests(workspace)
+    if list_only:
+        return
+
+    report = run_ecosystem_tests(workspace, simulate=simulate,
+                                 only=list(only) or None)
     click.echo(report.summary())
     if report.repos_failed > 0:
         sys.exit(1)
