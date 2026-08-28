@@ -219,3 +219,38 @@ class TestReportVerdict:
         ])
         body = rep.summary()
         assert body.index("zzz") < body.index("aaa")
+
+
+class TestBuildDirIsOutsideTheCheckout:
+    """Building into the repo leaves an untracked directory behind in every
+    repo the runner touches."""
+
+    def test_build_dir_is_not_inside_the_repo(self, tmp_path, monkeypatch):
+        from eosim.integrations.ecosystem import _build_dir_for
+        monkeypatch.setenv("EOSIM_BUILD_ROOT", str(tmp_path / "cache"))
+        repo = tmp_path / "eos"
+        repo.mkdir()
+        build = _build_dir_for(str(repo))
+        assert not build.startswith(str(repo))
+
+    def test_each_repo_gets_its_own_tree(self, tmp_path, monkeypatch):
+        from eosim.integrations.ecosystem import _build_dir_for
+        monkeypatch.setenv("EOSIM_BUILD_ROOT", str(tmp_path / "cache"))
+        (tmp_path / "eos").mkdir()
+        (tmp_path / "eBoot").mkdir()
+        a = _build_dir_for(str(tmp_path / "eos"))
+        b = _build_dir_for(str(tmp_path / "eBoot"))
+        assert a != b
+
+
+class TestBlockedTestsAreNotFailures:
+    def test_blocked_count_is_reported_separately(self):
+        rep = EcosystemReport(repos_tested=1, total_tests=39,
+                              total_passed=23, total_blocked=16)
+        body = rep.summary()
+        assert "16 blocked on missing deps" in body
+        assert "16 failed" not in body
+
+    def test_blocked_is_omitted_when_zero(self):
+        rep = EcosystemReport(total_tests=10, total_passed=10)
+        assert "blocked" not in rep.summary()

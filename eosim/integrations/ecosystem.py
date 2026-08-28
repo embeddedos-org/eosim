@@ -61,6 +61,7 @@ class EcosystemReport:
     total_tests: int = 0
     total_passed: int = 0
     total_failed: int = 0
+    total_blocked: int = 0
     duration_s: float = 0.0
     results: list = field(default_factory=list)
     simulations: list = field(default_factory=list)
@@ -74,8 +75,13 @@ class EcosystemReport:
         lines.append("  Repos:  %d discovered | %d passed | %d failed | %d skipped" % (
             self.repos_tested, self.repos_passed,
             self.repos_failed, self.repos_skipped))
-        lines.append("  Tests:  %d run       | %d passed | %d failed" % (
-            self.total_tests, self.total_passed, self.total_failed))
+        counts = "  Tests:  %d run | %d passed | %d failed" % (
+            self.total_tests, self.total_passed, self.total_failed)
+        if self.total_blocked:
+            # Blocked tests never ran; folding them into "failed" would read
+            # as broken code when the cause is an absent dependency.
+            counts += " | %d blocked on missing deps" % self.total_blocked
+        lines.append(counts)
         lines.append(f"  Time:   {self.duration_s:.1f}s")
         lines.append("")
         for r in sorted(self.results, key=lambda x: (x.status != FAIL, x.repo)):
@@ -191,6 +197,23 @@ def _skip(result: RepoTestResult, reason: str, start: float) -> RepoTestResult:
     return result
 
 
+def _build_dir_for(path: str) -> str:
+    """Where to put a repo's CMake tree.
+
+    Deliberately outside the checkout: building into <repo>/eosim-build left
+    an untracked directory in every repo the runner touched, which shows up
+    as a dirty working tree and, in a repo without a matching .gitignore, as
+    something a developer might commit. EOSIM_BUILD_ROOT overrides it.
+    """
+    root = os.environ.get("EOSIM_BUILD_ROOT")
+    if not root:
+        base = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
+        root = os.path.join(base, "eosim", "ecosystem")
+    build_dir = os.path.join(root, os.path.basename(os.path.abspath(path)))
+    os.makedirs(build_dir, exist_ok=True)
+    return build_dir
+
+
 def test_c_repo(name: str, path: str) -> RepoTestResult:
     """Configure, build and ctest a CMake repo, reporting ctest's own count."""
     result = RepoTestResult(repo=name, kind="cmake")
@@ -200,7 +223,7 @@ def test_c_repo(name: str, path: str) -> RepoTestResult:
     if not cmake:
         return _skip(result, "cmake not installed", start)
 
-    build_dir = os.path.join(path, "eosim-build")
+    build_dir = _build_dir_for(path)
     cfg = [cmake, "-S", path, "-B", build_dir,
            "-DEOS_BUILD_TESTS=ON", "-DEBLDR_BUILD_TESTS=ON",
            "-DEAI_BUILD_TESTS=ON", "-DENI_BUILD_TESTS=ON"]
@@ -494,7 +517,10 @@ def run_ecosystem_tests(workspace: str = None, simulate: bool = True,
         for r in per_kind:
             report.total_tests += r.tests_run
             report.total_passed += r.tests_passed
-            report.total_failed += r.tests_failed
+            if r.status == DEPS:
+                report.total_blocked += r.tests_failed
+            else:
+                report.total_failed += r.tests_failed
 
     if simulate:
         report.simulations = run_simulations()
