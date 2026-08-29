@@ -254,3 +254,40 @@ class TestBlockedTestsAreNotFailures:
     def test_blocked_is_omitted_when_zero(self):
         rep = EcosystemReport(total_tests=10, total_passed=10)
         assert "blocked" not in rep.summary()
+
+
+class TestMakeRunner:
+    """eosllm is driven by a Makefile. Before this it reported
+    "no runner for a 'make' project" and contributed nothing."""
+
+    def test_make_is_wired_to_a_runner(self, tmp_path):
+        d = _repo(tmp_path, "m", "Makefile")
+        (d / "Makefile").write_text("test:\n\t@true\n", encoding="utf-8")
+        r = run_one_repo("m", str(d))
+        assert r.kind == "make"
+        assert r.status == PASS
+
+    def test_a_makefile_without_a_test_target_is_skipped(self, tmp_path):
+        """`make test` against a Makefile with no such rule fails with
+        "No rule to make target", which would read as a broken repo rather
+        than one that keeps its tests elsewhere."""
+        d = _repo(tmp_path, "m", "Makefile")
+        (d / "Makefile").write_text("all:\n\t@true\n", encoding="utf-8")
+        r = run_one_repo("m", str(d))
+        assert r.status == SKIP
+        assert "test" in r.reason
+
+    def test_a_failing_make_test_is_a_failure(self, tmp_path):
+        d = _repo(tmp_path, "m", "Makefile")
+        (d / "Makefile").write_text("test:\n\t@exit 3\n", encoding="utf-8")
+        r = run_one_repo("m", str(d))
+        assert r.status == FAIL
+
+    def test_make_reports_its_exit_code_not_an_invented_count(self, tmp_path):
+        """There is no count to parse from a Makefile, and inventing one is
+        the fabrication this module exists to prevent."""
+        d = _repo(tmp_path, "m", "Makefile")
+        (d / "Makefile").write_text("test:\n\t@true\n", encoding="utf-8")
+        r = run_one_repo("m", str(d))
+        assert r.tests_run == 0
+        assert "exit 0" in r.reason

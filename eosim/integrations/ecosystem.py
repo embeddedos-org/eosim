@@ -86,10 +86,13 @@ class EcosystemReport:
         lines.append("")
         for r in sorted(self.results, key=lambda x: (x.status != FAIL, x.repo)):
             detail = ""
-            if r.status in (PASS, FAIL, DEPS):
+            if r.status in (PASS, FAIL, DEPS) and r.tests_run:
                 detail = "tests:%d/%d" % (r.tests_passed, r.tests_run)
                 if r.reason:
                     detail += "  " + r.reason
+            elif r.reason:
+                # No count to show — a Makefile-driven suite, or a skip.
+                detail = r.reason[:44]
             elif r.reason:
                 detail = r.reason[:44]
             lines.append("  [%-5s] %-26s %-9s %-46s (%.1fs)" % (
@@ -440,12 +443,61 @@ def test_node_repo(name: str, path: str) -> RepoTestResult:
     return result
 
 
+def test_make_repo(name: str, path: str) -> RepoTestResult:
+    """Run a Makefile's own `test` target.
+
+    Only when the Makefile actually declares one. Running `make test` against
+    a Makefile without that rule fails with "No rule to make target", which
+    would read as a broken repo rather than a repo that keeps its tests
+    somewhere else.
+    """
+    result = RepoTestResult(repo=name, kind="make")
+    start = time.time()
+
+    make = shutil.which("make")
+    if not make:
+        return _skip(result, "make not installed", start)
+
+    makefile = next(
+        (os.path.join(path, n) for n in ("Makefile", "makefile", "GNUmakefile")
+         if os.path.isfile(os.path.join(path, n))),
+        None,
+    )
+    if makefile is None:
+        return _skip(result, "no Makefile", start)
+    try:
+        with open(makefile, encoding="utf-8", errors="replace") as fh:
+            body = fh.read()
+    except OSError as exc:
+        return _skip(result, "cannot read the Makefile: %s" % exc, start)
+    if not re.search(r"^test\s*:", body, re.MULTILINE):
+        return _skip(result, "Makefile declares no 'test' target", start)
+
+    try:
+        r = subprocess.run([make, "-C", path, "test"], capture_output=True,
+                           text=True, timeout=_TEST_TIMEOUT_S)
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        result.status, result.reason = ERROR, "make test: %s" % exc
+        result.duration_s = time.time() - start
+        return result
+
+    result.build_ok = True
+    result.output = (r.stdout + r.stderr)[-4000:]
+    result.status = PASS if r.returncode == 0 else FAIL
+    # A Makefile reports through its exit code; there is no count to parse and
+    # inventing one would be the fabrication this module exists to avoid.
+    result.reason = "`make test` exit %d" % r.returncode
+    result.duration_s = time.time() - start
+    return result
+
+
 #: Detected kind -> the runner that knows how to test it.
 _RUNNERS = {
     "cmake": test_c_repo,
     "python": test_python_repo,
     "go": test_go_repo,
     "node": test_node_repo,
+    "make": test_make_repo,
 }
 
 
