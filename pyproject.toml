@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "eosim"
 version = "3.0.1"
-description = "World's most powerful universal simulation platform — supersedes 250+ tools across 20 domains"
+description = "Multi-architecture embedded simulation platform for EoS — native engine plus Renode/QEMU backends"
 readme = "README.md"
 requires-python = ">=3.9"
 license = {text = "MIT"}
@@ -16,7 +16,7 @@ maintainers = [
     {name = "EoS Project", email = "team@embeddedos.org"},
 ]
 classifiers = [
-    "Development Status :: 5 - Production/Stable",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
@@ -65,6 +65,12 @@ eosim = "eosim.cli.main:cli"
 
 [tool.setuptools.packages.find]
 include = ["eosim*"]
+
+# The platform registry is data, not modules, so packages.find alone does not
+# ship it. Without this the wheel installs but `eosim run` cannot find any
+# platform - see _resolve_platforms_dir() in eosim/cli/main.py.
+[tool.setuptools.package-data]
+"eosim.platforms" = ["**/*.yml", "**/*.yaml", "**/*.resc", "**/*.repl"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
