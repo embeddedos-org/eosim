@@ -31,6 +31,7 @@ from eosim.integrations.ecosystem import (
     DEPS, ERROR, FAIL, PASS, SKIP,
     EcosystemReport, RepoTestResult,
     _parse_ctest, _parse_pytest,
+    _unmet_toolchain,
     detect_components, detect_kind, detect_kinds, find_repos,
     test_repo as run_one_repo,
 )
@@ -385,3 +386,46 @@ class TestPythonTestsWithoutPackaging:
         (d / "tests").mkdir()
         (d / "tests" / "helper.py").write_text("", encoding="utf-8")
         assert detect_kinds(str(d)) == ["cmake"]
+
+
+class TestUnmetToolchainIsNotABrokenBuild:
+    """An absent vendor SDK and a missing source file need opposite responses.
+
+    eos-health produced both at once. firmware/build-system stops on
+    "NRF5_SDK_PATH not set", which means install something; two other trees stop
+    on "Cannot find source file", which means the CMakeLists and the tree
+    disagree and no installation will help. Reporting both as FAIL puts them in
+    the same column.
+    """
+
+    def test_an_unset_sdk_path_is_named(self):
+        assert _unmet_toolchain(
+            "NRF5_SDK_PATH not set.  Download nRF5 SDK 17.1.0"
+        ) == "NRF5_SDK_PATH"
+
+    def test_an_unset_toolchain_root_is_named(self):
+        assert _unmet_toolchain("ARM_TOOLCHAIN_ROOT not set") == "ARM_TOOLCHAIN_ROOT"
+
+    def test_a_find_package_failure_is_named(self):
+        assert _unmet_toolchain("Could NOT find OpenSSL") == "OpenSSL"
+
+    def test_a_missing_source_file_stays_a_failure(self):
+        # The repository is referencing code it does not contain. Classifying
+        # that as a dependency problem would hide a real defect behind a status
+        # that reads as "not our fault".
+        assert _unmet_toolchain(
+            "CMake Error at CMakeLists.txt:65 (add_executable):\n"
+            "  Cannot find source file:\n    src/main.c") is None
+
+    def test_a_target_with_no_sources_stays_a_failure(self):
+        assert _unmet_toolchain(
+            "No SOURCES given to target: health_band_neuro.elf") is None
+
+    def test_a_repo_defect_wins_when_both_appear(self):
+        # eos-health emits both in one configure run. The repo defect is the
+        # one that must survive the classification.
+        assert _unmet_toolchain(
+            "NRF5_SDK_PATH not set\nCannot find source file: a.c") is None
+
+    def test_an_unrecognised_failure_stays_a_failure(self):
+        assert _unmet_toolchain("CMake Error: something else entirely") is None

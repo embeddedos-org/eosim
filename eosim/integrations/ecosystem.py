@@ -312,8 +312,17 @@ def test_c_repo(name: str, path: str) -> RepoTestResult:
         result.duration_s = time.time() - start
         return result
     if r.returncode != 0:
-        result.status, result.reason = FAIL, "cmake configure failed"
-        result.output = (r.stderr or r.stdout)[-2000:]
+        output = (r.stderr or "") + (r.stdout or "")
+        unmet = _unmet_toolchain(output)
+        if unmet:
+            # An absent vendor SDK is not a broken build. Reporting it as FAIL
+            # puts it in the same column as a CMakeLists that references
+            # sources which do not exist, and the two need opposite responses:
+            # one is "install something", the other is "fix the repo".
+            result.status, result.reason = DEPS, "needs %s" % unmet
+        else:
+            result.status, result.reason = FAIL, "cmake configure failed"
+        result.output = output[-2000:]
         result.duration_s = time.time() - start
         return result
 
@@ -435,6 +444,33 @@ def test_python_repo(name: str, path: str) -> RepoTestResult:
             result.reason = "also missing %s" % ", ".join(missing)
     result.duration_s = time.time() - start
     return result
+
+
+# What a CMakeLists says when an external SDK or toolchain it needs is absent.
+# Deliberately narrow: it must not swallow "Cannot find source file", which
+# means the repository is referencing code it does not contain.
+_UNMET_TOOLCHAIN_PATTERNS = (
+    re.compile(r"(?P<name>[A-Z][A-Z0-9_]*_(?:SDK|TOOLCHAIN|ROOT|DIR|PATH|HOME)"
+               r"[A-Z0-9_]*)\s+not set"),
+    re.compile(r"Could NOT find (?P<name>[A-Za-z0-9_+-]+)"),
+    re.compile(r"(?P<name>[A-Za-z0-9_+-]+) is required but was not found"),
+)
+
+
+def _unmet_toolchain(output: str):
+    """The name of an absent external dependency, or None.
+
+    Returns None when the failure is anything the repository itself owns. A
+    missing source file in particular must stay a FAIL: it means the build
+    description and the tree disagree, which no amount of installing fixes.
+    """
+    if "Cannot find source file" in output or "No SOURCES given" in output:
+        return None
+    for pattern in _UNMET_TOOLCHAIN_PATTERNS:
+        match = pattern.search(output)
+        if match:
+            return match.group("name")
+    return None
 
 
 def _missing_modules(out: str) -> list:
