@@ -31,6 +31,8 @@ from eosim.integrations.ecosystem import (
     DEPS, ERROR, FAIL, PASS, SKIP,
     EcosystemReport, RepoTestResult,
     _parse_ctest, _parse_pytest,
+    _external_missing_modules,
+    _missing_modules,
     _unmet_toolchain,
     detect_components, detect_kind, detect_kinds, find_repos,
     test_repo as run_one_repo,
@@ -429,3 +431,63 @@ class TestUnmetToolchainIsNotABrokenBuild:
 
     def test_an_unrecognised_failure_stays_a_failure(self):
         assert _unmet_toolchain("CMake Error: something else entirely") is None
+
+
+class TestAbsentThirdPartyModulesAreNotFailures:
+    """pytest aborting on an uninstalled dependency is a DEPS, not a FAIL.
+
+    When collection fails, pytest prints no summary at all, so the counts are
+    never parsed and the DEPS branch further down is never reached. Five repos
+    in a full ecosystem run were reported FAIL for "No module named 'click'".
+    """
+
+    def test_a_third_party_module_is_reported(self, tmp_path):
+        out = "E   ModuleNotFoundError: No module named 'click'"
+        assert _external_missing_modules(out, str(tmp_path)) == ["click"]
+
+    def test_the_repos_own_package_is_not(self, tmp_path):
+        # The runner puts the checkout on PYTHONPATH, so a repo failing to
+        # import its own package is a real defect and must stay a FAIL.
+        (tmp_path / "eostudio").mkdir()
+        out = "E   ModuleNotFoundError: No module named 'eostudio'"
+        assert _external_missing_modules(out, str(tmp_path)) == []
+
+    def test_a_src_layout_package_is_recognised_as_the_repos_own(self, tmp_path):
+        (tmp_path / "src" / "mypkg").mkdir(parents=True)
+        out = "No module named 'mypkg'"
+        assert _external_missing_modules(out, str(tmp_path)) == []
+
+    def test_a_single_module_file_counts_as_the_repos_own(self, tmp_path):
+        (tmp_path / "helper.py").write_text("", encoding="utf-8")
+        out = "No module named 'helper'"
+        assert _external_missing_modules(out, str(tmp_path)) == []
+
+    def test_the_repos_own_absence_does_not_mask_a_third_party_one(self, tmp_path):
+        (tmp_path / "eostudio").mkdir()
+        out = ("No module named 'eostudio'\n"
+               "No module named 'click'")
+        assert _external_missing_modules(out, str(tmp_path)) == ["click"]
+
+    def test_nothing_missing_yields_nothing(self, tmp_path):
+        assert _external_missing_modules("all fine", str(tmp_path)) == []
+
+
+class TestMissingModuleSpellings:
+    """Both forms of Python's message, including the one that matters most."""
+
+    def test_the_quoted_form(self):
+        assert _missing_modules("No module named 'click'") == ["click"]
+
+    def test_the_bare_form(self):
+        # `python -m pytest` on an interpreter without pytest prints no quotes.
+        # This is the case where the test runner itself is absent — exactly
+        # when nothing else in the output explains the failure — and missing it
+        # reported five repos as FAIL for an environment problem.
+        assert _missing_modules("No module named pytest") == ["pytest"]
+
+    def test_a_dotted_name_reduces_to_its_top_level(self):
+        assert _missing_modules("No module named 'a.b.c'") == ["a"]
+
+    def test_both_forms_together_and_deduplicated(self):
+        out = "No module named pytest\nNo module named 'click'\nNo module named 'click'"
+        assert _missing_modules(out) == ["pytest", "click"]

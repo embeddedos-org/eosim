@@ -421,7 +421,18 @@ def test_python_repo(name: str, path: str) -> RepoTestResult:
                   else "pytest produced no summary (exit %d)" % r.returncode)
         if r.returncode in (0, 5):
             return _skip(result, reason, start)
-        result.status, result.reason = FAIL, reason
+
+        # A collection error caused by absent third-party modules is the same
+        # condition DEPS already covers further down, reached earlier: pytest
+        # aborts before printing any summary, so the counts never get parsed.
+        # Calling it FAIL puts "pip install click" in the same column as a
+        # suite that genuinely fails.
+        external = _external_missing_modules(result.output, path)
+        if external:
+            result.status = DEPS
+            result.reason = "needs %s" % ", ".join(external)
+        else:
+            result.status, result.reason = FAIL, reason
         result.duration_s = time.time() - start
         return result
 
@@ -474,13 +485,41 @@ def _unmet_toolchain(output: str):
 
 
 def _missing_modules(out: str) -> list:
-    """Module names pytest could not import, deduplicated and ordered."""
+    """Module names that could not be imported, deduplicated and ordered.
+
+    Both spellings are matched. ModuleNotFoundError quotes the name, but
+    `python -m pytest` on an interpreter without pytest prints the bare form
+    "No module named pytest" — the case where the test runner itself is what is
+    absent, which is exactly when nothing else in the output explains the
+    failure.
+    """
     seen = []
-    for name in re.findall(r"No module named '([^']+)'", out):
-        top = name.split(".")[0]
+    for quoted, bare in re.findall(
+            r"No module named (?:'([^']+)'|([A-Za-z_][\w.]*))", out):
+        top = (quoted or bare).split(".")[0]
         if top not in seen:
             seen.append(top)
     return seen
+
+
+def _external_missing_modules(out: str, repo_path: str) -> list:
+    """Absent modules that the repository does not itself provide.
+
+    A repo failing to import its own package is a real defect — the runner
+    already puts the checkout on PYTHONPATH, so that import should resolve —
+    and must stay a FAIL. Only third-party absences are an environment
+    problem.
+    """
+    external = []
+    for name in _missing_modules(out):
+        provided = (
+            os.path.isdir(os.path.join(repo_path, name))
+            or os.path.isfile(os.path.join(repo_path, name + ".py"))
+            or os.path.isdir(os.path.join(repo_path, "src", name))
+        )
+        if not provided:
+            external.append(name)
+    return external
 
 
 def _parse_pytest(out: str):
