@@ -181,11 +181,85 @@ def detect_kinds(path: str) -> list:
         kinds.append("cargo")
     if has("package.json"):
         kinds.append("node")
+    if not kinds and _has_python_tests(path):
+        # A repo can be a perfectly good pytest project with no packaging file.
+        # eCAD-Hardware-Products carries tests/test_rtl_models.py and no
+        # pyproject.toml, and test_python_repo() only ever needed a tests/
+        # directory. Requiring pyproject.toml to notice that was the detector
+        # asking for something the runner does not use.
+        #
+        # Guarded on `not kinds` so a repo whose real build system is already
+        # identified does not also get pytest pointed at it: eBoot has both a
+        # CMakeLists.txt and a tests/ directory full of C.
+        kinds.append("python")
     if not kinds and has("Makefile", "makefile"):
         kinds.append("make")
     if not kinds and has("mkdocs.yml", "_config.yml", "index.html"):
         kinds.append("docs")
     return kinds or ["unknown"]
+
+
+def _has_python_tests(path: str) -> bool:
+    """True when tests/ or test/ holds at least one Python file."""
+    for d in ("tests", "test"):
+        tdir = os.path.join(path, d)
+        if not os.path.isdir(tdir):
+            continue
+        for _root, _dirs, files in os.walk(tdir):
+            if any(f.endswith(".py") for f in files):
+                return True
+    return False
+
+
+# Directories that never contain a component of the repo itself. node_modules
+# is the one that matters: a vendored package.json would otherwise be reported
+# as a build system belonging to the repo.
+_NOT_A_COMPONENT_DIR = {
+    ".git", "node_modules", "build", "dist", "venv", ".venv", "__pycache__",
+    ".tox", "target", "vendor", "third_party", ".mypy_cache", ".pytest_cache",
+}
+
+_NESTED_MAX_DEPTH = 4
+
+
+def detect_components(path: str) -> list:
+    """(kind, directory) for every build system in the repo, root or nested.
+
+    The runners build from the directory they are handed, so a nested component
+    has to carry its own location. Returning just the kind would send
+    test_c_repo at eos-health's root, which has no CMakeLists.txt, turning a
+    silent skip into a spurious failure.
+
+    Root detection runs first and is returned unchanged when it finds anything,
+    so every repo that is detected today keeps taking exactly the path it takes
+    today. The scan below only ever runs for a repo that would otherwise have
+    been reported "unknown" and skipped.
+    """
+    kinds = detect_kinds(path)
+    if kinds != ["unknown"]:
+        return [(k, path) for k in kinds]
+
+    found = []
+    seen = set()
+    base_depth = os.path.abspath(path).count(os.sep)
+
+    for root, dirs, _files in os.walk(path):
+        dirs[:] = sorted(d for d in dirs
+                         if d not in _NOT_A_COMPONENT_DIR and not d.startswith("."))
+        if os.path.abspath(root).count(os.sep) - base_depth >= _NESTED_MAX_DEPTH:
+            dirs[:] = []
+            continue
+        if root == path:
+            continue
+        for kind in detect_kinds(root):
+            if kind in ("unknown", "docs"):
+                continue
+            key = (kind, root)
+            if key not in seen:
+                seen.add(key)
+                found.append(key)
+
+    return found or [("unknown", path)]
 
 
 def detect_kind(path: str) -> str:
@@ -513,14 +587,19 @@ def test_repo_all(name: str, path: str) -> list:
     build behind a green Python suite.
     """
     results = []
-    for kind in detect_kinds(path):
+    for kind, comp_path in detect_components(path):
+        # Label a nested component by its path within the repo, so one repo
+        # yielding several rows stays readable and a failure names the
+        # directory that produced it.
+        rel = os.path.relpath(comp_path, path)
+        label = name if rel == "." else "%s/%s" % (name, rel.replace(os.sep, "/"))
         runner = _RUNNERS.get(kind)
         if runner is None:
-            r = RepoTestResult(repo=name, kind=kind)
+            r = RepoTestResult(repo=label, kind=kind)
             results.append(
                 _skip(r, "no runner for a '%s' project" % kind, time.time()))
         else:
-            results.append(runner(name, path))
+            results.append(runner(label, comp_path))
     return results
 
 

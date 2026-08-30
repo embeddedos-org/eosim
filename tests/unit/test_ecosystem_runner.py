@@ -31,7 +31,7 @@ from eosim.integrations.ecosystem import (
     DEPS, ERROR, FAIL, PASS, SKIP,
     EcosystemReport, RepoTestResult,
     _parse_ctest, _parse_pytest,
-    detect_kind, detect_kinds, find_repos,
+    detect_components, detect_kind, detect_kinds, find_repos,
     test_repo as run_one_repo,
 )
 
@@ -291,3 +291,97 @@ class TestMakeRunner:
         r = run_one_repo("m", str(d))
         assert r.tests_run == 0
         assert "exit 0" in r.reason
+
+
+class TestNestedComponents:
+    """A build system below the repo root must still be found.
+
+    detect_kinds looked only at the root, so eos-health (CMake firmware under
+    firmware/build-system, a web app under apps/web), eos-aero (a web app four
+    levels down) and eCAD-Hardware-Products (pytest tests, no packaging file)
+    all reported "unknown". The runner found no runner for that, skipped them,
+    and the summary counted the skip alongside the passes. Three of nineteen
+    repos were never tested by the tool whose job is to test them.
+    """
+
+    def test_root_detection_is_returned_unchanged(self, tmp_path):
+        # The guarantee that makes this change safe: a repo detected at the
+        # root must keep taking exactly the path it takes today, so the scan
+        # cannot regress the repos that already work.
+        d = _repo(tmp_path, "eos", "CMakeLists.txt")
+        assert detect_components(str(d)) == [("cmake", str(d))]
+
+    def test_root_detection_wins_over_anything_nested(self, tmp_path):
+        d = _repo(tmp_path, "ebuild", "CMakeLists.txt", "pyproject.toml")
+        (d / "vendored").mkdir()
+        (d / "vendored" / "package.json").write_text("{}", encoding="utf-8")
+        kinds = [k for k, _ in detect_components(str(d))]
+        assert kinds == ["cmake", "python"]
+        assert "node" not in kinds
+
+    def test_nested_component_carries_its_own_directory(self, tmp_path):
+        # The runners build from the directory handed to them. Reporting
+        # "cmake" without the location would send cmake -S at the repo root,
+        # which has no CMakeLists.txt — a spurious failure in place of a
+        # silent skip is not an improvement.
+        d = _repo(tmp_path, "eos-health")
+        nested = d / "firmware" / "build-system"
+        nested.mkdir(parents=True)
+        (nested / "CMakeLists.txt").write_text("", encoding="utf-8")
+        assert detect_components(str(d)) == [("cmake", str(nested))]
+
+    def test_several_nested_components_are_all_reported(self, tmp_path):
+        d = _repo(tmp_path, "eos-health")
+        for sub, marker in (("firmware/build-system", "CMakeLists.txt"),
+                            ("apps/web", "package.json")):
+            p = d / sub
+            p.mkdir(parents=True)
+            (p / marker).write_text("", encoding="utf-8")
+        assert sorted(k for k, _ in detect_components(str(d))) == ["cmake", "node"]
+
+    def test_vendored_directories_are_not_components(self, tmp_path):
+        # A package.json under node_modules belongs to a dependency, not to
+        # the repo. Reporting it would have the runner test someone else's code.
+        d = _repo(tmp_path, "eOffice")
+        vendored = d / "node_modules" / "left-pad"
+        vendored.mkdir(parents=True)
+        (vendored / "package.json").write_text("{}", encoding="utf-8")
+        assert detect_components(str(d)) == [("unknown", str(d))]
+
+    def test_scan_depth_is_bounded(self, tmp_path):
+        d = _repo(tmp_path, "deep")
+        buried = d / "a" / "b" / "c" / "d" / "e"
+        buried.mkdir(parents=True)
+        (buried / "package.json").write_text("{}", encoding="utf-8")
+        assert detect_components(str(d)) == [("unknown", str(d))]
+
+    def test_a_repo_with_nothing_still_reports_unknown(self, tmp_path):
+        d = _repo(tmp_path, "docs-only", "README.md")
+        assert detect_components(str(d)) == [("unknown", str(d))]
+
+
+class TestPythonTestsWithoutPackaging:
+    """pytest projects with no pyproject.toml are still pytest projects."""
+
+    def test_tests_directory_alone_identifies_python(self, tmp_path):
+        # test_python_repo only ever required a tests/ directory. Demanding
+        # pyproject.toml to reach it was the detector asking for something the
+        # runner does not use.
+        d = _repo(tmp_path, "eCAD-Hardware-Products")
+        (d / "tests").mkdir()
+        (d / "tests" / "test_rtl_models.py").write_text("", encoding="utf-8")
+        assert detect_kinds(str(d)) == ["python"]
+
+    def test_a_tests_directory_without_python_does_not_count(self, tmp_path):
+        d = _repo(tmp_path, "thing")
+        (d / "tests").mkdir()
+        (d / "tests" / "test_main.c").write_text("", encoding="utf-8")
+        assert detect_kinds(str(d)) == ["unknown"]
+
+    def test_c_repo_with_c_tests_does_not_also_become_python(self, tmp_path):
+        # eBoot has a CMakeLists.txt and a tests/ directory full of C. Pointing
+        # pytest at it would report a failure that means nothing.
+        d = _repo(tmp_path, "eBoot", "CMakeLists.txt")
+        (d / "tests").mkdir()
+        (d / "tests" / "helper.py").write_text("", encoding="utf-8")
+        assert detect_kinds(str(d)) == ["cmake"]
