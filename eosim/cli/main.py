@@ -10,9 +10,29 @@ from pathlib import Path
 
 import click
 import yaml
+from eosim import __version__
 
 EOSIM_ROOT = Path(__file__).parent.parent.parent
-PLATFORMS_DIR = EOSIM_ROOT / "platforms"
+
+def _resolve_platforms_dir() -> Path:
+    """Locate the platform registry.
+
+    It ships inside the package (eosim/platforms) so a wheel is self-contained.
+    It previously lived at the repository root and was addressed as
+    EOSIM_ROOT/"platforms", where EOSIM_ROOT is site-packages once installed -
+    so every `eosim run` from a wheel died with FileNotFoundError on
+    site-packages/platforms. An editable install hid this, because there
+    EOSIM_ROOT is the checkout.
+
+    The repo-root path is still tried, for anyone running an older layout.
+    """
+    packaged = Path(__file__).parent.parent / "platforms"
+    if packaged.is_dir():
+        return packaged
+    return EOSIM_ROOT / "platforms"
+
+
+PLATFORMS_DIR = _resolve_platforms_dir()
 
 
 def _find_platform(name):
@@ -46,7 +66,7 @@ def _load_registry():
 
 
 @click.group()
-@click.version_option(version="2.0.0", prog_name="eosim")
+@click.version_option(version=__version__, prog_name="eosim")
 def cli():
     """EoSim - World-class embedded simulation platform (150+ platforms, 40 domains)."""
     pass
@@ -154,7 +174,10 @@ def info(platform):
 @click.option("--headless/--interactive", default=True, help="Run headless (default) or interactive")
 @click.option("--timeout", default=60, help="Timeout in seconds")
 @click.option("--log-dir", default="out/logs", help="Log output directory")
-def run(platform, headless, timeout, log_dir):
+@click.option("--firmware", type=click.Path(exists=True, dir_okay=False), default=None,
+              help="Firmware image to load and execute (e.g. an EoS build). Without "
+                   "it the native engine has nothing to run.")
+def run(platform, headless, timeout, log_dir, firmware):
     """Run a simulation for the specified platform."""
     cfg_path, p = _find_platform(platform)
     if not p:
@@ -169,23 +192,23 @@ def run(platform, headless, timeout, log_dir):
     log_file = os.path.join(log_dir, platform + ".log")
 
     if engine == "renode":
-        _run_renode(p, platform, headless, timeout, log_file)
+        _run_renode(p, platform, headless, timeout, log_file, firmware)
     elif engine == "qemu":
-        _run_qemu(p, platform, headless, timeout, log_file)
+        _run_qemu(p, platform, headless, timeout, log_file, firmware)
     elif engine == "eosim":
-        _run_eosim(p, platform, headless, timeout, log_file)
+        _run_eosim(p, platform, headless, timeout, log_file, firmware)
     else:
         click.echo("Unknown engine: " + engine, err=True)
         sys.exit(1)
 
 
-def _run_renode(p, platform, headless, timeout, log_file):
+def _run_renode(p, platform, headless, timeout, log_file, firmware=None):
     """Run using the Renode engine."""
     renode = shutil.which("renode")
     if not renode:
         click.echo("Renode not found. Install: https://renode.io")
         click.echo("Falling back to EoSim native engine...")
-        _run_eosim(p, platform, headless, timeout, log_file)
+        _run_eosim(p, platform, headless, timeout, log_file, firmware)
         return
     resc = PLATFORMS_DIR / platform / p.get("resc", "sim.resc")
     cmd = [renode, "--disable-xwt", "--plain", str(resc)]
@@ -207,10 +230,10 @@ def _run_renode(p, platform, headless, timeout, log_file):
         click.echo("Timeout after %ds — saving log" % timeout)
     except FileNotFoundError:
         click.echo("Engine not found, falling back to EoSim native engine")
-        _run_eosim(p, platform, headless, timeout, log_file)
+        _run_eosim(p, platform, headless, timeout, log_file, firmware)
 
 
-def _run_qemu(p, platform, headless, timeout, log_file):
+def _run_qemu(p, platform, headless, timeout, log_file, firmware=None):
     """Run using the QEMU engine."""
     arch = p.get("arch", "x86_64")
     qemu_map = {
@@ -239,24 +262,40 @@ def _run_qemu(p, platform, headless, timeout, log_file):
     click.echo("PASSED (QEMU fallback)")
 
 
-def _run_eosim(p, platform, headless, timeout, log_file):
+def _run_eosim(p, platform, headless, timeout, log_file, firmware=None):
     """Run using the EoSim native engine."""
     from eosim.engine.native import VirtualMachine
     arch = p.get("arch", "arm")
     memory = p.get("runtime", {}).get("memory_mb", 128)
     click.echo("EoSim native engine: %s (%s, %dMB)" % (platform, arch, memory))
     vm = VirtualMachine(name=platform, arch=arch, ram_mb=min(memory, 64))
+
+    if firmware:
+        if not vm.load_firmware(firmware):
+            click.echo("Could not load firmware: %s" % firmware, err=True)
+            sys.exit(1)
+        click.echo("Firmware: %s (%d bytes)" % (firmware, os.path.getsize(firmware)))
+
     result = vm.run(max_cycles=10000, timeout_s=float(timeout))
+
     with open(log_file, "w") as f:
         f.write("=== EoSim Native Log ===\n")
-        f.write(f"Platform: {platform}\nArch: {arch}\n\n")
+        f.write("Platform: %s\nArch: %s\n" % (platform, arch))
+        f.write("Firmware: %s\n\n" % (firmware or "(none)"))
         f.write(result.get("boot_log", ""))
     click.echo("Log: " + log_file)
+
+    reason = result.get("reason", "unknown")
     if result.get("success"):
-        click.echo("PASSED (%d cycles)" % result.get("cycles", 0))
-    else:
-        click.echo("FAILED")
-        sys.exit(1)
+        click.echo("PASSED (%d cycles, %s)" % (result.get("cycles", 0), reason))
+        return
+    if reason == "no-firmware":
+        # Previously this path printed "PASSED (10000 cycles)" after stepping
+        # over zeroed memory with no image loaded. It is not a pass.
+        click.echo("NO FIRMWARE - nothing was executed. Pass --firmware <image>.", err=True)
+        sys.exit(2)
+    click.echo("FAILED (%s after %d cycles)" % (reason, result.get("cycles", 0)), err=True)
+    sys.exit(1)
 
 
 @cli.command()
@@ -382,7 +421,7 @@ def artifact(platform, output):
     os.makedirs(output, exist_ok=True)
     manifest = {
         "platform": platform,
-        "version": "2.0.0",
+        "version": __version__,
         "artifacts": ["logs", "traces", "reports"],
     }
     manifest_path = os.path.join(output, platform + "-manifest.json")
@@ -600,18 +639,38 @@ def eos_test_suite(source):
 @cli.command("ecosystem")
 @click.option("--workspace", default=None, help="EoS workspace root")
 @click.option("--simulate/--no-simulate", default=True, help="Run simulations")
-def ecosystem(workspace, simulate):
+@click.option("--only", multiple=True,
+              help="Test only these repos (repeatable, e.g. --only eos --only ebuild)")
+@click.option("--list", "list_only", is_flag=True,
+              help="List the repos that would be tested, and how, then exit")
+def ecosystem(workspace, simulate, only, list_only):
     """Test ALL EoS repos — build, test, simulate, validate."""
-    from eosim.integrations.ecosystem import find_repos, run_ecosystem_tests
+    from eosim.integrations.ecosystem import (
+        detect_kind, find_repos, run_ecosystem_tests)
     click.echo("EoSim Ecosystem Validation")
     click.echo("")
     repos = find_repos(workspace)
     if not repos:
         click.echo("No EoS repos found. Set --workspace or EOS_WORKSPACE env var.", err=True)
         sys.exit(1)
-    click.echo("Found %d repos: %s" % (len(repos), ", ".join(repos.keys())))
+
+    if only:
+        unknown = sorted(set(only) - set(repos))
+        if unknown:
+            click.echo("Not in the workspace: %s" % ", ".join(unknown), err=True)
+            click.echo("Available: %s" % ", ".join(sorted(repos)), err=True)
+            sys.exit(1)
+        repos = {k: v for k, v in repos.items() if k in only}
+
+    click.echo("Found %d repo(s):" % len(repos))
+    for name in sorted(repos):
+        click.echo("    %-28s %s" % (name, detect_kind(repos[name])))
     click.echo("")
-    report = run_ecosystem_tests(workspace)
+    if list_only:
+        return
+
+    report = run_ecosystem_tests(workspace, simulate=simulate,
+                                 only=list(only) or None)
     click.echo(report.summary())
     if report.repos_failed > 0:
         sys.exit(1)

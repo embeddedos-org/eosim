@@ -137,7 +137,7 @@ jobs:
           "
       - name: Platform count check
         run: |
-          count=$(ls -d platforms/*/platform.yml 2>/dev/null | wc -l)
+          count=$(ls -d eosim/platforms/*/platform.yml 2>/dev/null | wc -l)
           echo "Platform count: $count"
           if [ "$count" -lt 100 ]; then
             echo "::warning::Platform count ($count) is below 100"
