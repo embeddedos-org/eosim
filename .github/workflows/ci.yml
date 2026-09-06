@@ -112,7 +112,7 @@ jobs:
           import os, yaml, sys
           from eosim.core.schema import validate_platform
 
-          platforms_dir = 'platforms'
+          platforms_dir = 'eosim/platforms'
           errors = []
           count = 0
 
@@ -128,6 +128,9 @@ jobs:
                   errors.append(f'{name}: {errs}')
 
           print(f'Validated {count} platforms')
+          if count == 0:
+              print(f'ERROR: no platform.yml found under {platforms_dir!r}')
+              sys.exit(1)
           if errors:
               print(f'ERRORS ({len(errors)}):')
               for e in errors:
